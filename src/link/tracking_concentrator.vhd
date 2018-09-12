@@ -49,6 +49,7 @@ architecture Behavioral of tracking_concentrator is
     signal vfat2_cnt    : integer range 0 to 23;
     
     signal ec_bc        : std_logic_vector(31 downto 0);
+    signal fake_ec      : unsigned(15 downto 0); -- this is incremented and used only in the event when reading the ec_bc fifo reports an underflow (in this case we set an error bit, but still report a changing EC number on every event which is important for the backend to separate events)
 
     signal evt_data     : tk_data_array_t(23 downto 0);
     signal evt_stb      : std_logic_vector(23 downto 0);
@@ -97,6 +98,7 @@ begin
                 ec_bc_rd_o <= '0';
                 evt_wr_o <= '0';
                 evt_data_o <= (others => '0');
+                fake_ec <= (others => '0');
             else
                 case state is
                     when IDLE =>
@@ -122,7 +124,13 @@ begin
                             ec_bc <= ec_bc_data_i;
                             state <= RUN;
                         elsif (ec_bc_error_i = '1') then
-                            ec_bc <= (others => '0');
+                            if ((ec_bc(19) = '0') and (ec_bc(15 downto 0) = std_logic_vector(fake_ec))) then
+                                ec_bc <= x"fff8" & std_logic_vector(fake_ec + 1);
+                                fake_ec <= fake_ec + 2;
+                            else
+                                ec_bc <= x"fff8" & std_logic_vector(fake_ec);
+                                fake_ec <= fake_ec + 1;
+                            end if;
                             state <= RUN;
                         end if;
                     when RUN =>

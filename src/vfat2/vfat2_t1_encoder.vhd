@@ -13,6 +13,7 @@
 -- Encodes the T1 commands for the VFAT2s on 3 consecutive bits. If two signals 
 -- arrive with a delay less than 3 clock cycles, the second operation is ignored.
 -- The priority is as follows: LV1A, Calpulse, Resync, BC0.
+-- If an L1A comes in while a BC0 is being sent, the L1A command will be sent instead of the BC0.
 --
 ----------------------------------------------------------------------------------
 
@@ -88,9 +89,20 @@ begin
                     when BIT_1 =>
                         vfat2_t1_o <= t1_data(1);
                         state <= BIT_0;
+                        -- if we're currently sending out a BC0, but L1A just came in, replace the BC0 command with the L1A
+                        -- it's better to loose a BC0 than an L1A. Lost BC0 will only affect the BC of the VFAT which can even be corrected, but data won't be lost
+                        if ((t1_data = "01") and (vfat2_t1_i.lv1a = '1')) then
+                            t1_data <= "00";
+                        end if;
                     -- Send bit 0
                     when BIT_0 =>
-                        vfat2_t1_o <= t1_data(0);
+                        -- if we're currently sending out a BC0, but L1A just came in, replace the BC0 command with the L1A
+                        -- it's better to loose a BC0 than an L1A. Lost BC0 will only affect the BC of the VFAT which can even be corrected, but data won't be lost
+                        if ((t1_data = "01") and (vfat2_t1_i.lv1a = '1')) then
+                            vfat2_t1_o <= '0';
+                        else
+                            vfat2_t1_o <= t1_data(0);
+                        end if;
                         state <= IDLE;
                     --
                     when others => 

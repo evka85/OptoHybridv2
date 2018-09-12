@@ -37,12 +37,21 @@ end ec_bc;
 
 architecture Behavioral of ec_bc is
 
-    signal bc : unsigned(11 downto 0);
-    signal ec : unsigned(19 downto 0);
+    signal bc               : unsigned(11 downto 0);
+    signal ec               : unsigned(15 downto 0);
+    signal skipped_vfat_bc0 : std_logic;
     
-    signal wr : std_logic;
+    signal wr               : std_logic;
+    
+    signal unf              : std_logic;
+    signal full             : std_logic;
+    
+    signal had_unf          : std_logic;
+    signal had_ovf          : std_logic;
 
 begin
+
+    error_o <= unf;
 
     process(ref_clk_i)
     begin
@@ -51,18 +60,46 @@ begin
                 bc <= (others => '0');
                 ec <= (others => '0');
                 wr <= '0';
-            elsif (vfat2_t1_i.resync = '1' or vfat2_t1_i.bc0 = '1') then
+                skipped_vfat_bc0 <= '0';
+                had_unf <= '0';
+                had_ovf <= '0';
+            elsif (vfat2_t1_i.resync = '1') then
                 bc <= (others => '0');
                 ec <= (others => '0');
                 wr <= '0';
+                skipped_vfat_bc0 <= '0';
+                had_unf <= '0';
+                had_ovf <= '0';
             else
-                bc <= bc + 1;
+                if (vfat2_t1_i.bc0 = '1') then
+                    bc <= (others => '0');
+                    skipped_vfat_bc0 <= '0';
+                else
+                    bc <= bc + 1;
+                end if;
+                
                 if (vfat2_t1_i.lv1a = '1') then
                     ec <= ec + 1;
                     wr <= '1';
+                    if ((vfat2_t1_i.bc0 = '1') or (bc = x"000") or (bc = x"001")) then
+                        skipped_vfat_bc0 <= '1';
+                    end if;
                 else 
                     wr <= '0';
                 end if;
+                
+                if (unf = '1') then
+                    had_unf <= '1';
+                else
+                    had_unf <= had_unf;
+                end if;
+                
+                if ((full = '1') and (wr = '1')) then
+                    had_ovf <= '1';
+                else
+                    had_ovf <= had_ovf;
+                end if;
+                
             end if;
         end if;
     end process;
@@ -70,14 +107,14 @@ begin
     fifo_inst : entity work.fifo_bx
     port map(
         clk         => ref_clk_i,
-        rst         => reset_i,
+        rst         => reset_i or vfat2_t1_i.resync,
         wr_en       => wr,
-        din         => std_logic_vector(bc) & std_logic_vector(ec),
+        din         => std_logic_vector(bc) & '0' & had_unf & had_ovf & skipped_vfat_bc0 & std_logic_vector(ec),
         rd_en       => rd_i,
         valid       => valid_o,
         dout        => data_o,
-        underflow   => error_o,
-        full        => open,
+        underflow   => unf,
+        full        => full,
         empty       => open
     );    
 
